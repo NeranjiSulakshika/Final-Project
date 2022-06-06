@@ -33,7 +33,18 @@ var peer = new Peer(undefined, {
   port: "443",
 });
 
+const peers = {};
+socket.on("user-disconnected", (userId, count) => {
+  if (peers[userId]) {
+      peers[userId].close();
+      delete peers[userId];
+      changeCount(count);
+  }
+});
+
 let myVideoStream;
+var myVideoTrack;
+
 navigator.mediaDevices
   .getUserMedia({
     audio: true,
@@ -50,10 +61,21 @@ navigator.mediaDevices
       });
     });
 
-    socket.on("user-connected", (userId) => {
-      connectToNewUser(userId, stream);
-    });
+  //   socket.on("user-connected", (userId) => {
+  //     connectToNewUser(userId, stream);
+  //   });
+  // });
+  socket.on("user-connected", (userId, count) => {
+    socket.emit("user-callback");
+    connectToNewUser(userId, stream);
+    changeCount(count);
   });
+});
+
+const changeCount = (count) => {
+  const counter = document.getElementById("user-number");
+  counter.innerHTML = count;
+};
 
 const connectToNewUser = (userId, stream) => {
   const call = peer.call(userId, stream);
@@ -64,6 +86,29 @@ const connectToNewUser = (userId, stream) => {
 
   });
 };
+
+// const meetingToggleBtn = document.getElementById("meeting-toggle");
+// meetingToggleBtn.addEventListener("click", (e) => {
+//     const currentElement = e.target;
+//     const counter = document.getElementById("user-number");
+//     const count = Number(counter.innerText) + 1;
+//     if (currentElement.classList.contains("call-button")) {
+//         changeCount(count);
+//         currentElement.classList.remove("call-button");
+//         currentElement.classList.add("call-end-button");
+//         currentElement.classList.add("tooltip-danger");
+//         currentElement.setAttribute("tool_tip", "Leave the Meeting");
+//         socket.emit(
+//             "join-room",
+//             ROOM_ID,
+//             Peer_ID,
+//             USER_ID,
+//             name,
+//             myVideoStream.getAudioTracks()[0].enabled,
+//             myVideoStream.getVideoTracks()[0].enabled
+//         );
+//     } else location.replace(`/`);
+// });
 
 peer.on("open", (id) => {
   socket.emit("join-room", ROOM_ID, id, user);
@@ -99,7 +144,7 @@ const addVideoStream = (video, stream) => {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       faceapi.draw.drawDetections(canvas, resizedDetections);
       faceapi.draw.drawFaceLandmarks(canvas, resizedDetections);
-      // faceapi.draw.drawFaceExpressions(canvas, resizedDetections);
+       faceapi.draw.drawFaceExpressions(canvas, resizedDetections);
     }, 100);
   });
 };
@@ -172,3 +217,68 @@ socket.on("createMessage", (message, userName) => {
         <span>${message}</span>
     </div>`;
 });
+
+// share screen
+const shareScreenBtn = document.getElementById("share-screen");
+shareScreenBtn.addEventListener("click", (e) => {
+    if (e.target.classList.contains("true")) return;
+    e.target.setAttribute("tool_tip", "You are already presenting screen");
+    e.target.classList.add("true");
+    navigator.mediaDevices
+        .getDisplayMedia({
+            video: true,
+            audio: {
+                echoCancellation: true,
+                noiseSuppression: true,
+                sampleRate: 44100,
+            },
+        })
+        .then((stream) => {
+            var videoTrack = stream.getVideoTracks()[0];
+            myVideoTrack = myVideoStream.getVideoTracks()[0];
+            replaceVideoTrack(myVideoStream, videoTrack);
+            for (peer in peers) {
+                let sender = peers[peer].peerConnection
+                    .getSenders()
+                    .find(function (s) {
+                        return s.track.kind == videoTrack.kind;
+                    });
+                sender.replaceTrack(videoTrack);
+            }
+            const elementsWrapper = document.querySelector(".elements-wrapper");
+            const stopBtn = document.createElement("button");
+            stopBtn.classList.add("video-element");
+            stopBtn.classList.add("stop-presenting-button");
+            stopBtn.innerHTML = "Stop Sharing";
+            elementsWrapper.classList.add("screen-share");
+            elementsWrapper.appendChild(stopBtn);
+            videoTrack.onended = () => {
+                elementsWrapper.classList.remove("screen-share");
+                stopBtn.remove();
+                stopPresenting(videoTrack);
+            };
+            stopBtn.onclick = () => {
+                videoTrack.stop();
+                elementsWrapper.classList.remove("screen-share");
+                stopBtn.remove();
+                stopPresenting(videoTrack);
+            };
+        });
+});
+
+const stopPresenting = (videoTrack) => {
+  shareScreenBtn.classList.remove("true");
+  shareScreenBtn.setAttribute("tool_tip", "Present Screen");
+  for (peer in peers) {
+      let sender = peers[peer].peerConnection.getSenders().find(function (s) {
+          return s.track.kind == videoTrack.kind;
+      });
+      sender.replaceTrack(myVideoTrack);
+  }
+  replaceVideoTrack(myVideoStream, videoTrack);
+};
+
+const replaceVideoTrack = (myVideoStream, videoTrack) => {
+  myVideoStream.removeTrack(myVideoStream.getVideoTracks()[0]);
+  myVideoStream.addTrack(videoTrack);  
+};

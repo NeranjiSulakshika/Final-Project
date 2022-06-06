@@ -70,9 +70,9 @@ video {
   display: flex;
 }
 
-.options__right {
+/* .options__right {
   margin-left: auto;
-}
+} */
 
 .options__button {
   display: flex;
@@ -198,3 +198,13 @@ video {
     display: flex;
   }
 }
+
+#share-screen {
+  background-color: #2F80EC;
+    color: white;
+    border: none;
+}
+
+.options__left {
+  margin-left: 37%;
+ }
